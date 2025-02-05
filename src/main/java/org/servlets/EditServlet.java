@@ -6,24 +6,22 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.converters.UserRequestConverter;
 import org.models.User;
-import org.parsers.UserParser;
+import org.converters.UserJsonConverter;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
-import java.util.Date;
 
-import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 public class EditServlet extends HttpServlet {
-    protected void doGet(HttpServletRequest request, HttpServletResponse resp)
-            throws ServletException, IOException {
+    protected void doGet(HttpServletRequest request, HttpServletResponse resp) {
         try {
             String idParameter = request.getParameter("id");
             if (idParameter == null) {
@@ -36,10 +34,11 @@ public class EditServlet extends HttpServlet {
                     CloseableHttpClient httpClient = HttpClients.createDefault()) {
                 String url = "http://localhost:8080/user-service/user-management?id=" + id;
                 HttpGet getRequest = new HttpGet(url);
+                getRequest.setHeader("Authorization", "1234567890qawsedrftgthyujkiol");
                 try (CloseableHttpResponse response = httpClient.execute(getRequest)) {
                     String responseJson = getBody(response);
-                    UserParser userParser = new UserParser();
-                    user = userParser.convert(responseJson);
+                    UserJsonConverter userJsonConverter = new UserJsonConverter();
+                    user = userJsonConverter.convert(responseJson);
                 }
             }
             if (user != null) {
@@ -67,46 +66,40 @@ public class EditServlet extends HttpServlet {
     }
 
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse resp)
-            throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse resp) {
         try {
-            String idParameter = request.getParameter("id");
-            int id = Integer.parseInt(idParameter);
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-            dateFormat.setLenient(false);
-            String birthDateString = request.getParameter("birthDate");
-            Date birthDate = dateFormat.parse(birthDateString);
-            String name = request.getParameter("name");
-            int age = Integer.parseInt(request.getParameter("age"));
-            User user = new User(id, name, age, birthDate);
-            int status;
-            try (
-                    CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                String url = "http://localhost:8080/user-service/user-management?id=" + id;
+            String idReqParam = request.getParameter("id");
+            String nameReqParam = request.getParameter("name");
+            String ageReqParam = request.getParameter("age");
+            String birthDateReqParam = request.getParameter("birthDate");
+
+            // validation
+            // convert
+            UserRequestConverter userRequestConverter = new UserRequestConverter();
+            User user = userRequestConverter.convert(idReqParam, nameReqParam, ageReqParam, birthDateReqParam);
+            UserJsonConverter userJsonConverter = new UserJsonConverter();
+            String jsonUserPayload = userJsonConverter.convertUserToJson(user);
+
+
+            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+                String url = "http://localhost:8080/user-service/user-management";
                 HttpPut putRequest = new HttpPut(url);
-
-                UserParser userParser = new UserParser();
-                String json = userParser.convertUserToJson(user);
                 putRequest.setHeader("Content-Type", "application/json");
-                StringEntity entity = new StringEntity(json);
+                putRequest.setHeader("Authorization", "1234567890qawsedrftgthyujkiol");
+                StringEntity entity = new StringEntity(jsonUserPayload);
                 putRequest.setEntity(entity);
-
                 try (CloseableHttpResponse response = httpClient.execute(putRequest)) {
-                    status = response.getCode();
+                    int code = response.getCode();
+                    if (code == 200) {
+                        resp.setStatus(HttpServletResponse.SC_MOVED_TEMPORARILY);
+                        resp.setHeader("Location", "http://localhost:8080/users/view-servlet");
+                    } else if (code == 401) {
+                        throw new Exception("Not authorize to call user service");
+                    } else {
+                        throw new Exception("Unexpected error occurred");
+                    }
                 }
-            }catch (Exception exception){
-                status = 500;
             }
-            resp.setContentType("text/html");
-            PrintWriter out = resp.getWriter();
-            if (status != 500) {
-                resp.setStatus(resp.SC_MOVED_TEMPORARILY);
-                resp.setHeader("Location", "http://localhost:8080/users/view-servlet");
-            } else {
-                out.println("Sorry! unable to update record");
-            }
-
-            out.close();
         } catch (Exception exception) {
             System.err.println("Error in edit servlet doPost");
             exception.printStackTrace();

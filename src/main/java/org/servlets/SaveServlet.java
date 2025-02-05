@@ -5,26 +5,22 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.converters.UserRequestConverter;
 import org.models.User;
-import org.parsers.UserParser;
+import org.converters.UserJsonConverter;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.Date;
 
-import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 public class SaveServlet extends HttpServlet {
     @Override
-    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         PrintWriter writer = resp.getWriter();
         writer.println("<!DOCTYPE html>\n" +
                 "<html>\n" +
@@ -54,44 +50,42 @@ public class SaveServlet extends HttpServlet {
 
     }
 
-    protected void doPost(HttpServletRequest request, HttpServletResponse resp)
-            throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse resp) {
         try {
+            String nameReqParam = request.getParameter("name");
+            String ageReqParam = request.getParameter("age");
+            String birthDateReqParam = request.getParameter("birthDate");
+
+            // skip validation
+            // convert request data to object (user)
+            UserRequestConverter userRequestConverter = new UserRequestConverter();
+            User user = userRequestConverter.convert(nameReqParam, ageReqParam, birthDateReqParam);
+            UserJsonConverter userJsonConverter = new UserJsonConverter();
+            String jsonUserPayload = userJsonConverter.convertUserToJson(user);
+
+
             String url = "http://localhost:8080/user-service/user-management";
-
-            String name = request.getParameter("name");
-            int age = Integer.parseInt(request.getParameter("age"));
-            String birthDateString = request.getParameter("birthDate");
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");  // Adjust the pattern based on the incoming format
-
-            // Parse the string to LocalDate
-            LocalDate localDate = LocalDate.parse(birthDateString, formatter);
-
-            // Convert LocalDate to java.util.Date
-            Date birthDate = java.sql.Date.valueOf(localDate);
-            User user = new User();
-            user.setName(name);
-            user.setAge(age);
-            user.setBirthDate(birthDate);
-
-            UserParser userParser = new UserParser();
-            String json = userParser.convertUserToJson(user);
             try (
                     CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                HttpPost getRequest = new HttpPost(url);
-                getRequest.setHeader("Content-Type", "application/json");
-                StringEntity entity = new StringEntity(json);
-                getRequest.setEntity(entity);
-                try (CloseableHttpResponse response = httpClient.execute(getRequest)) {
-                    String responseJson = getBody(response);
-                    User responseUser = userParser.convert(responseJson);
-                    System.out.println("\n" + responseUser + "\n");
+                HttpPost postRequest = new HttpPost(url);
+                postRequest.setHeader("Content-Type", "application/json");
+                postRequest.setHeader("Authorization", "1234567890qawsedrftgthyujkiol");
+                StringEntity entity = new StringEntity(jsonUserPayload);
+                postRequest.setEntity(entity);
+                try (CloseableHttpResponse response = httpClient.execute(postRequest)) {
                     if (response.getCode() == 200) {
-                        System.out.println("200");
-                        resp.sendRedirect("view-servlet");
-                    } else if (response.getCode() == 500) {
-                        System.out.println("500");
-                        throw new Exception("Error in user-service");
+                        String responseJson = getBody(response);
+                        User responseUser = userJsonConverter.convert(responseJson);
+                        if (responseUser.getId() > 0) {
+                            System.out.println("User successfully created with id " + responseUser.getId());
+                            resp.sendRedirect("view-servlet");
+                        }
+                    } else if (response.getCode() == 401) {
+                        System.out.println("Not authorize to make a call");
+                        throw new Exception("Not authorize to call user service");
+                    } else {
+                        System.out.println("Unexpected error occurred calling user service");
+                        throw new Exception("Unexpected error occurred");
                     }
                 }
             }
@@ -112,5 +106,4 @@ public class SaveServlet extends HttpServlet {
         }
         return responseBody.toString();
     }
-
 }

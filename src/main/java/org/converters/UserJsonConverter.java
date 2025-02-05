@@ -1,4 +1,4 @@
-package org.parsers;
+package org.converters;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.models.User;
@@ -7,7 +7,7 @@ import org.models.Users;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 
-public class UserParser {
+public class UserJsonConverter {
     public String convertUserToJson(User user) {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
